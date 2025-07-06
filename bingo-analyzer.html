@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <title>BingoBingo 分析系統</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f7f7f7; }
+    h2 { color: #222; }
+    button { padding: 10px 20px; margin: 10px 0; font-size: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    canvas { margin-top: 30px; }
+  </style>
+</head>
+<body>
+
+  <h2>🎯 BingoBingo 最新 50 期分析系統</h2>
+  <button onclick="analyzeDataOnline()">🌐 擷取資料並分析</button>
+
+  <div id="output">
+    <h3>📊 出現頻率統計</h3>
+    <div id="frequency-output"></div>
+
+    <h3>🎯 策略建議</h3>
+    <div id="strategy-output"></div>
+
+    <h3>📈 視覺化圖表</h3>
+    <canvas id="freqChart" width="400" height="200"></canvas>
+  </div>
+
+<script>
+  async function analyzeDataOnline() {
+    try {
+      const records = await loadLotteryData();
+      const allNumbers = records.flatMap(r => r.numbers);
+      const freqMap = countFrequencies(allNumbers);
+      displayFrequency(freqMap);
+      suggestStrategies(freqMap);
+      renderChart(freqMap);
+    } catch (e) {
+      alert("❌ 載入失敗：" + e.message);
+    }
+  }
+
+  async function loadLotteryData() {
+    const targetUrl = 'https://lotto.auzo.tw/bingobingo.php';
+    const proxies = [
+      'https://api.allorigins.win/get?url=',
+      'https://corsproxy.io/?',
+      'https://api.codetabs.com/v1/proxy?quest='
+    ];
+
+    for (const proxy of proxies) {
+      try {
+        const res = await fetch(proxy + encodeURIComponent(targetUrl));
+        const json = await res.json();
+        const html = json.contents || json;
+        const parsed = parseRealLotteryData(html);
+        return parsed.slice(0, 50);
+      } catch (e) {
+        console.warn(`[代理失敗] ${proxy}`, e);
+      }
+    }
+
+    throw new Error("無法取得開獎資料（代理皆失敗）");
+  }
+
+  function parseRealLotteryData(html) {
+    const pattern = /(\d{6,})\s+(\d{2}:\d{2})\s+((?:\d{2}){20})/g;
+    const records = [];
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const [_, period, time, nums] = match;
+      const numbers = nums.match(/\d{2}/g).map(n => parseInt(n));
+      const bigCount = numbers.filter(n => n > 40).length;
+      const oddCount = numbers.filter(n => n % 2 === 1).length;
+      records.push({ period, time, numbers, bigCount, oddCount });
+    }
+    return records;
+  }
+
+  function countFrequencies(numbers) {
+    const freq = {};
+    numbers.forEach(n => freq[n] = (freq[n] || 0) + 1);
+    return freq;
+  }
+
+  function displayFrequency(freqMap) {
+    const sorted = Object.entries(freqMap).sort((a, b) => b[1] - a[1]);
+    let html = "<table><tr><th>號碼</th><th>次數</th></tr>";
+    sorted.forEach(([n, c]) => {
+      html += `<tr><td>${n}</td><td>${c}</td></tr>`;
+    });
+    html += "</table>";
+    document.getElementById("frequency-output").innerHTML = html;
+  }
+
+  function suggestStrategies(freqMap) {
+    const sorted = Object.entries(freqMap).sort((a, b) => b[1] - a[1]);
+    const hot = sorted.slice(0, 15).map(([n]) => parseInt(n));
+    const cold = sorted.slice(-15).map(([n]) => parseInt(n));
+
+    const hotPicks = getRandom(hot, 10);
+    const mixed = [...hot.slice(0, 5), ...cold.slice(0, 5)];
+
+    let html = `<p><strong>🔥 熱門號：</strong> ${hotPicks.join(" ")}</p>`;
+    html += `<p><strong>♻️ 混合策略：</strong> ${mixed.join(" ")}</p>`;
+    document.getElementById("strategy-output").innerHTML = html;
+  }
+
+  function getRandom(arr, count) {
+    return [...arr].sort(() => 0.5 - Math.random()).slice(0, count);
+  }
+
+  function renderChart(freqMap) {
+    const sorted = Object.entries(freqMap).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+    const labels = sorted.map(([n]) => n);
+    const data = sorted.map(([_, c]) => c);
+
+    if (window.freqChartInstance) window.freqChartInstance.destroy();
+
+    const ctx = document.getElementById("freqChart").getContext("2d");
+    window.freqChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: '出現次數',
+          data,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+</script>
+</body>
+</html>
